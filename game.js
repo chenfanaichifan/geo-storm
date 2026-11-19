@@ -323,6 +323,37 @@
     }
   }
 
+  /** Boss 阵亡烟花：三团不同色，带重力和空气阻力 */
+  function spawnFirework(cx, cy) {
+    var palette = ['#ffd166', '#8ef0a8', '#7ee8ff', '#ff8ad8', '#ffffff'];
+
+    for (var burst = 0; burst < 3; burst++) {
+      var bx = cx + (Math.random() - 0.5) * 64;
+      var by = cy + (Math.random() - 0.5) * 46;
+      var color = palette[Math.floor(Math.random() * palette.length)];
+      var n = 30;
+
+      for (var i = 0; i < n; i++) {
+        var ang = (Math.PI * 2 * i) / n + Math.random() * 0.12;
+        var speed = 105 + Math.random() * 195;
+        var life = 0.85 + Math.random() * 0.75;
+
+        state.particles.push({
+          x: bx,
+          y: by,
+          vx: Math.cos(ang) * speed,
+          vy: Math.sin(ang) * speed,
+          life: life,
+          t: life,
+          color: color,
+          g: 190,
+          drag: 1.3,
+          r: 1.5 + Math.random() * 1.7
+        });
+      }
+    }
+  }
+
   function createExplosion(cx, cy) {
     var puffs = [];
     var n = 11;
@@ -394,9 +425,12 @@
 
     if (en.kind === 'boss') {
       spawnParticles(cx, cy, '#ff9f43');
+      spawnFirework(cx, cy);
       for (var b = 0; b < 3; b++) dropPickup(cx, cy, true);
       state.score += 50;
-      state.shake = Math.max(state.shake, 0.4);
+      state.flash = Math.max(state.flash, 0.22);
+      state.slowTimer = SLOW_DURATION;
+      state.shake = Math.max(state.shake, 0.6);
     } else if (en.kind === 'elite') {
       spawnParticles(cx, cy, '#ff9f43');
       dropPickup(cx, cy);
@@ -906,6 +940,12 @@
       var pt = state.particles[p];
       pt.x += pt.vx * dt;
       pt.y += pt.vy * dt;
+      if (pt.g) pt.vy += pt.g * dt;
+      if (pt.drag) {
+        var k = Math.max(0, 1 - pt.drag * dt);
+        pt.vx *= k;
+        pt.vy *= k;
+      }
       pt.t -= dt;
       if (pt.t <= 0) state.particles.splice(p, 1);
     }
@@ -1308,9 +1348,16 @@
 
     for (i = 0; i < state.particles.length; i++) {
       var pt = state.particles[i];
-      ctx.globalAlpha = Math.max(0, pt.t / pt.life);
+      var alpha = Math.max(0, pt.t / pt.life);
+      ctx.globalAlpha = alpha;
       ctx.fillStyle = pt.color || '#ffd166';
-      ctx.fillRect(pt.x - 2, pt.y - 2, 4, 4);
+      if (pt.r) {
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, pt.r * (0.45 + alpha * 0.55), 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        ctx.fillRect(pt.x - 2, pt.y - 2, 4, 4);
+      }
     }
     ctx.globalAlpha = 1;
 
