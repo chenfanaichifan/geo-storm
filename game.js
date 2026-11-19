@@ -281,8 +281,13 @@
     buildWave(state.waveIndex);
 
     var isBoss = state.waveIndex % BOSS_EVERY === 0;
+    var areaChanged = state.waveIndex > 1 && (state.waveIndex - 1) % BG_SWITCH_EVERY === 0;
     state.banner = BANNER_TIME;
-    state.bannerText = isBoss ? 'WARNING' : 'WAVE ' + state.waveIndex;
+    state.bannerText = areaChanged
+      ? 'AREA ' + (Math.floor((state.waveIndex - 1) / BG_SWITCH_EVERY) + 1)
+      : isBoss
+        ? 'WARNING'
+        : 'WAVE ' + state.waveIndex;
     updatePow();
   }
 
@@ -1132,27 +1137,123 @@
     ctx.fillRect(en.x, en.y, en.w, en.h);
   }
 
-  function draw() {
-    ctx.clearRect(0, 0, W, H);
+  // 三张背景按波次轮换：每 15 波换一张，循环
+  var BG_IMAGES = ['bg1.jpg', 'bg2.jpg', 'bg3.jpg'];
+  var BG_SWITCH_EVERY = 15;
+  var bgImages = [];
+  var bgReady = [];
+  for (var bi = 0; bi < BG_IMAGES.length; bi++) {
+    (function (idx) {
+      bgReady[idx] = false;
+      var img = new Image();
+      img.onload = function () { bgReady[idx] = true; };
+      img.onerror = function () { bgReady[idx] = false; };
+      img.src = BG_IMAGES[idx];
+      bgImages[idx] = img;
+    })(bi);
+  }
 
-    ctx.fillStyle = '#0b0f1a';
+  function bgIndexForWave() {
+    var area = Math.floor((Math.max(1, state.waveIndex) - 1) / BG_SWITCH_EVERY);
+    return area % BG_IMAGES.length;
+  }
+
+  var stars = [];
+  for (var si = 0; si < 80; si++) {
+    stars.push({
+      x: Math.random() * W,
+      y0: Math.random() * H,
+      z: 0.25 + Math.random() * 0.75,
+      r: Math.random() < 0.78 ? 1 : 2
+    });
+  }
+
+  function drawBackground() {
+    var idx = bgIndexForWave();
+    if (bgReady[idx] && bgImages[idx]) {
+      var img = bgImages[idx];
+      var scale = Math.max(W / img.width, H / img.height);
+      var dw = img.width * scale;
+      var dh = img.height * scale;
+      ctx.drawImage(img, (W - dw) / 2, (H - dh) / 2, dw, dh);
+      ctx.fillStyle = 'rgba(5, 7, 13, 0.55)';
+      ctx.fillRect(0, 0, W, H);
+      return;
+    }
+
+    var g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, '#070b16');
+    g.addColorStop(0.55, '#0b1220');
+    g.addColorStop(1, '#05070d');
+    ctx.fillStyle = g;
     ctx.fillRect(0, 0, W, H);
 
-    ctx.strokeStyle = 'rgba(80, 140, 255, 0.08)';
+    var boost = 1 + state.waveIndex * 0.03;
+    for (var i = 0; i < stars.length; i++) {
+      var s = stars[i];
+      var y = (s.y0 + state.elapsed * (18 + s.z * 62) * boost) % H;
+      ctx.globalAlpha = 0.22 + s.z * 0.5;
+      ctx.fillStyle = '#9fd4ff';
+      ctx.fillRect(s.x, y, s.r, s.r);
+    }
+    ctx.globalAlpha = 1;
+
+    var v = ctx.createRadialGradient(W / 2, H * 0.45, H * 0.2, W / 2, H * 0.45, H * 0.82);
+    v.addColorStop(0, 'rgba(0, 0, 0, 0)');
+    v.addColorStop(1, 'rgba(0, 0, 0, 0.5)');
+    ctx.fillStyle = v;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  function drawPlayer() {
+    var rapid = state.rapid > 0;
+
+    ctx.save();
+    ctx.translate(state.player.x, state.player.y);
+
+    var flame = 7 + Math.sin(state.elapsed * 34) * 2 + (rapid ? 5 : 0);
+    ctx.fillStyle = rapid ? 'rgba(255, 224, 102, 0.85)' : 'rgba(126, 232, 255, 0.85)';
+    ctx.beginPath();
+    ctx.moveTo(-3.5, 9);
+    ctx.lineTo(0, 9 + flame);
+    ctx.lineTo(3.5, 9);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.moveTo(0, -17);
+    ctx.lineTo(-14, 7);
+    ctx.lineTo(-5, 3.5);
+    ctx.lineTo(0, 9);
+    ctx.lineTo(5, 3.5);
+    ctx.lineTo(14, 7);
+    ctx.closePath();
+    ctx.fillStyle = rapid ? '#d6ff7a' : '#8ef0a8';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(5, 7, 13, 0.6)';
     ctx.lineWidth = 1;
-    var gx, gy;
-    for (gx = 0; gx <= W; gx += 40) {
-      ctx.beginPath();
-      ctx.moveTo(gx + 0.5, 0);
-      ctx.lineTo(gx + 0.5, H);
-      ctx.stroke();
-    }
-    for (gy = 0; gy <= H; gy += 40) {
-      ctx.beginPath();
-      ctx.moveTo(0, gy + 0.5);
-      ctx.lineTo(W, gy + 0.5);
-      ctx.stroke();
-    }
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(0, -17);
+    ctx.lineTo(3.2, -2);
+    ctx.lineTo(0, 9);
+    ctx.lineTo(-3.2, -2);
+    ctx.closePath();
+    ctx.fillStyle = rapid ? '#f4ffc2' : '#d4ffe2';
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(0, -4.5, 2, 0, Math.PI * 2);
+    ctx.fillStyle = '#0b0f1a';
+    ctx.fill();
+
+    ctx.restore();
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+    drawBackground();
 
     ctx.save();
     if (state.shake > 0) {
@@ -1192,21 +1293,11 @@
       var blink = state.invuln > 0 && Math.floor(state.invuln * 12) % 2 === 0;
       ctx.globalAlpha = blink ? 0.3 : 1;
 
-      var px = state.player.x;
-      var py = state.player.y;
-      var r = 13;
-      ctx.beginPath();
-      ctx.moveTo(px, py - r);
-      ctx.lineTo(px + r * 0.85, py + r * 0.7);
-      ctx.lineTo(px, py + r * 0.25);
-      ctx.lineTo(px - r * 0.85, py + r * 0.7);
-      ctx.closePath();
-      ctx.fillStyle = state.rapid > 0 ? '#d6ff7a' : '#8ef0a8';
-      ctx.fill();
+      drawPlayer();
 
       if (state.shield > 0) {
         ctx.beginPath();
-        ctx.arc(px, py, 20, 0, Math.PI * 2);
+        ctx.arc(state.player.x, state.player.y, 20, 0, Math.PI * 2);
         ctx.strokeStyle = 'rgba(110, 200, 255, ' + (0.3 + state.shield * 0.22) + ')';
         ctx.lineWidth = 2;
         ctx.stroke();
