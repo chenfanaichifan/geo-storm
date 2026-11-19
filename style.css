@@ -1,0 +1,216 @@
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: #05070d;
+}
+
+body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  font-family: ui-monospace, Menlo, Consolas, "Courier New", monospace;
+  color: #cfe3ff;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+
+.stage {
+  position: relative;
+  width: min(100vw, calc(100vh * 360 / 640));
+  height: min(100vh, calc(100vw * 640 / 360));
+  background: #0b0f1a;
+  border-left: 1px solid rgba(80, 140, 255, 0.12);
+  border-right: 1px solid rgba(80, 140, 255, 0.12);
+  overflow: hidden;
+}
+
+@supports (height: 100dvh) {
+  .stage {
+    width: min(100vw, calc(100dvh * 360 / 640));
+    height: min(100dvh, calc(100vw * 640 / 360));
+  }
+}
+
+canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+/* HUD 顶部让开刘海与状态栏 */
+.hud {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: calc(10px + env(safe-area-inset-top, 0px)) 14px 10px;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  pointer-events: none;
+}
+
+.hud-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hud .label { color: #5a7ba6; }
+
+.hud .value {
+  font-size: 19px;
+  color: #8ef0a8;
+}
+
+.hud .best-value {
+  font-size: 14px;
+  color: #ffd166;
+}
+
+.lives {
+  display: flex;
+  gap: 4px;
+}
+
+.lives i {
+  display: block;
+  width: 10px;
+  height: 10px;
+  background: #8ef0a8;
+  transition: background 0.15s ease;
+}
+
+.lives i.off {
+  background: #26314b;
+}
+
+.pow {
+  font-size: 10px;
+  color: #8ef0a8;
+  border: 1px solid rgba(142, 240, 168, 0.35);
+  padding: 1px 4px;
+  line-height: 1.4;
+}
+
+.pow.max {
+  color: #ffd166;
+  border-color: rgba(255, 209, 102, 0.6);
+}
+
+.bomb-btn {
+  position: absolute;
+  right: 14px;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  width: 62px;
+  height: 62px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  padding: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px solid rgba(255, 159, 67, 0.5);
+  border-radius: 50%;
+  background: rgba(255, 159, 67, 0.14);
+  color: #ff9f43;
+  font-family: inherit;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.08s ease, opacity 0.15s ease;
+}
+
+.bomb-btn:active { transform: scale(0.94); }
+
+.bomb-btn:disabled {
+  opacity: 0.28;
+  cursor: default;
+}
+
+.bomb-label { font-size: 9px; }
+
+.bomb-count {
+  font-size: 18px;
+  font-weight: bold;
+  line-height: 1;
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: rgba(5, 7, 13, 0.84);
+  pointer-events: none;
+}
+
+.overlay[hidden] { display: none; }
+
+.over-title {
+  margin: 0;
+  font-size: 26px;
+  letter-spacing: 0.2em;
+  color: #ff5d73;
+}
+
+.over-score {
+  margin: 6px 0 0;
+  font-size: 14px;
+  color: #cfe3ff;
+}
+
+.over-score strong {
+  font-size: 22px;
+  color: #ffd166;
+}
+
+.over-best {
+  margin: 0;
+  font-size: 12px;
+  color: #8ba3c7;
+}
+
+.over-best strong {
+  font-size: 15px;
+  color: #ffd166;
+}
+
+.over-hint {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: #5a7ba6;
+}
+
+/* 横屏提示：只在触屏设备横握时出现 */
+.rotate-hint { display: none; }
+
+@media (orientation: landscape) and (pointer: coarse) {
+  .rotate-hint {
+    display: flex;
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    align-items: center;
+    justify-content: center;
+    background: #05070d;
+    color: #cfe3ff;
+    font-size: 15px;
+    letter-spacing: 0.12em;
+  }
+}
