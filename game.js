@@ -19,10 +19,9 @@
   var FIRE_GAP_NORMAL = 170;
   var FIRE_GAP_RAPID = 80;
   var START_BOMBS = 2;
-  var BOMB_ELITE_DAMAGE = 3;
-  var BOMB_BOSS_DAMAGE = 30;
+  var BOMB_ELITE_DAMAGE = 6;
+  var BOMB_BOSS_DAMAGE = 12;
 
-  var MAX_POWER = 5;
   var SUPPLY_EVERY = 100;
 
   var SLOW_DURATION = 0.6;
@@ -34,7 +33,7 @@
   var BETWEEN_WAVE_GAP = 0.9;
   var BANNER_TIME = 1.2;
   var BOSS_EVERY = 10;
-  var BOSS_HP = 300;
+  var BOSS_HP = 70;
   var BOSS_W = 132;
   var BOSS_H = 92;
   var BOSS_SWAY = 92;
@@ -104,8 +103,9 @@
   }
 
   function updatePow() {
-    powEl.textContent = 'P' + state.power;
-    powEl.classList.toggle('max', state.power >= MAX_POWER);
+    var wave = Math.max(1, state.waveIndex);
+    powEl.textContent = 'W' + wave;
+    powEl.classList.toggle('max', wave >= BOSS_EVERY);
   }
 
   function reset() {
@@ -116,8 +116,6 @@
       shield: 0,
       rapid: 0,
       bombs: START_BOMBS,
-      power: 1,
-      powerExp: 0,
       nextSupply: SUPPLY_EVERY,
       invuln: 0,
       elapsed: 0,
@@ -193,7 +191,14 @@
 
     var w = isBoss ? BOSS_W : SIZE_OF[kind] || 28;
     var h = isBoss ? BOSS_H : SIZE_OF[kind] || 28;
-    var hp = isBoss ? BOSS_HP : HP_OF[kind] || 1;
+    // 小兵血量随波次变厚，分裂残渣保持 1 血
+    var waveExtra = Math.min(5, Math.floor(state.waveIndex / 4));
+    var baseHp = HP_OF[kind] || 1;
+    var hp = isBoss
+      ? BOSS_HP
+      : kind === 'mini'
+        ? baseHp
+        : baseHp + waveExtra;
 
     state.enemies.push({
       kind: kind,
@@ -278,6 +283,7 @@
     var isBoss = state.waveIndex % BOSS_EVERY === 0;
     state.banner = BANNER_TIME;
     state.bannerText = isBoss ? 'WARNING' : 'WAVE ' + state.waveIndex;
+    updatePow();
   }
 
   function spawnParticles(cx, cy, color) {
@@ -353,21 +359,6 @@
     });
   }
 
-  function addPowerExp(amount) {
-    if (state.power >= MAX_POWER) return;
-
-    state.powerExp += amount;
-
-    while (state.power < MAX_POWER) {
-      var need = L.powerExpNeeded(state.power);
-      if (state.powerExp < need) break;
-      state.powerExp -= need;
-      state.power += 1;
-      state.shake = Math.max(state.shake, 0.1);
-    }
-    updatePow();
-  }
-
   /** 每 100 分补给一次：优先补炸弹，其次回血，都满则加分 */
   function checkSupply() {
     if (state.score < state.nextSupply) return;
@@ -424,8 +415,6 @@
         });
       }
     }
-
-    addPowerExp(L.killExp(en.kind));
   }
 
   function applyPickup(type) {
@@ -528,44 +517,16 @@
     overlay.hidden = false;
   }
 
+  /** 固定单发：火力不再随击杀增长，难度只靠敌人变厚 */
   function firePlayerBullets() {
-    var cx = state.player.x;
-    var cy = state.player.y - 16;
-    var lv = state.power;
-    var spd = 620;
-
-    function shot(offsetX, angle) {
-      state.bullets.push({
-        x: cx + offsetX - 2,
-        y: cy,
-        w: 4,
-        h: 14,
-        vx: Math.sin(angle) * spd,
-        vy: -Math.cos(angle) * spd
-      });
-    }
-
-    if (lv === 1) {
-      shot(0, 0);
-    } else if (lv === 2) {
-      shot(-6, 0);
-      shot(6, 0);
-    } else if (lv === 3) {
-      shot(0, 0);
-      shot(-8, -0.14);
-      shot(8, 0.14);
-    } else if (lv === 4) {
-      shot(-6, 0);
-      shot(6, 0);
-      shot(-13, -0.2);
-      shot(13, 0.2);
-    } else {
-      shot(0, 0);
-      shot(-9, -0.16);
-      shot(9, 0.16);
-      shot(-16, -0.32);
-      shot(16, 0.32);
-    }
+    state.bullets.push({
+      x: state.player.x - 2,
+      y: state.player.y - 16,
+      w: 4,
+      h: 14,
+      vx: 0,
+      vy: -620
+    });
   }
 
   /** 瞄准单发 */
