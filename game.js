@@ -135,7 +135,9 @@
       particles: [],
       explosions: [],
       fireTimer: 0,
-      shake: 0
+      shake: 0,
+      paused: false,
+      hint: 2.8
     };
     scoreEl.textContent = '0';
     bestEl.textContent = String(best);
@@ -160,6 +162,12 @@
   }
 
   canvas.addEventListener('pointerdown', function (e) {
+    unlockAudio();
+    if (state.paused) {
+      state.paused = false;
+      lastTs = 0;
+      return;
+    }
     if (state.mode === 'over') reset();
     try {
       canvas.setPointerCapture(e.pointerId);
@@ -354,6 +362,90 @@
     }
   }
 
+  // ---- 音效：全部用 WebAudio 现场合成，不引入任何音频文件 ----
+  var audioCtx = null;
+  var noiseBuf = null;
+
+  function unlockAudio() {
+    if (!audioCtx) {
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      try {
+        audioCtx = new AC();
+      } catch (err) {
+        return;
+      }
+    }
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+  }
+
+  function getNoise() {
+    if (noiseBuf) return noiseBuf;
+    var rate = audioCtx.sampleRate;
+    var len = Math.floor(rate * 0.5);
+    noiseBuf = audioCtx.createBuffer(1, len, rate);
+    var d = noiseBuf.getChannelData(0);
+    for (var i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    return noiseBuf;
+  }
+
+  function blip(from, to, dur, type, vol) {
+    if (!audioCtx) return;
+    var t = audioCtx.currentTime;
+    var osc = audioCtx.createOscillator();
+    var g = audioCtx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(from, t);
+    if (to && to !== from) osc.frequency.exponentialRampToValueAtTime(to, t + dur);
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    osc.connect(g);
+    g.connect(audioCtx.destination);
+    osc.start(t);
+    osc.stop(t + dur + 0.02);
+  }
+
+  function boom(dur, vol, cutoff) {
+    if (!audioCtx) return;
+    var t = audioCtx.currentTime;
+    var src = audioCtx.createBufferSource();
+    src.buffer = getNoise();
+    var g = audioCtx.createGain();
+    var f = audioCtx.createBiquadFilter();
+    f.type = 'lowpass';
+    f.frequency.setValueAtTime(cutoff, t);
+    f.frequency.exponentialRampToValueAtTime(140, t + dur);
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(f);
+    f.connect(g);
+    g.connect(audioCtx.destination);
+    src.start(t);
+    src.stop(t + dur + 0.02);
+  }
+
+  /** 子弹命中敌机时的小火花 */
+  function spawnSparks(x, y, color) {
+    for (var i = 0; i < 4; i++) {
+      var ang = Math.random() * Math.PI * 2;
+      var speed = 55 + Math.random() * 85;
+      var life = 0.14 + Math.random() * 0.12;
+
+      state.particles.push({
+        x: x,
+        y: y,
+        vx: Math.cos(ang) * speed,
+        vy: Math.sin(ang) * speed,
+        life: life,
+        t: life,
+        color: color || '#ffe9a8',
+        g: 60,
+        drag: 2.6,
+        r: 1.1
+      });
+    }
+  }
+
   function createExplosion(cx, cy) {
     var puffs = [];
     var n = 11;
@@ -377,13 +469,18 @@
     spawnMushroomParticles(cx, cy);
   }
 
-  var PICKUP_TYPES = ['heal', 'shield', 'rapid'];
   var PICKUP_COLORS = { heal: '#6ef08a', shield: '#6ec8ff', rapid: '#ffd166' };
   var PICKUP_LABELS = { heal: 'H', shield: 'S', rapid: 'R' };
 
-  function dropPickup(cx, cy, force) {
-    if (!force && Math.random() > 0.85) return;
-    var type = PICKUP_TYPES[Math.floor(Math.random() * PICKUP_TYPES.length)];
+  /** chance 省略时必掉；给了数字则按概率掉 */
+  function dropPickup(cx, cy, chance) {
+    var rate = typeof chance === 'number' ? chance : 1;
+    if (Math.random() > rate) return;
+
+    // 血量是主要痛点，所以回血占一半，护盾三成，射速两成
+    var roll = Math.random();
+    var type = roll < 0.5 ? 'heal' : roll < 0.8 ? 'shield' : 'rapid';
+
     state.pickups.push({
       x: cx - 7 + (Math.random() - 0.5) * 24,
       y: cy - 7,
@@ -424,23 +521,29 @@
     var cy = en.y + en.h / 2;
 
     if (en.kind === 'boss') {
+      boom(0.6, 0.15, 1500);
+      blip(240, 60, 0.6, 'sawtooth', 0.06);
       spawnParticles(cx, cy, '#ff9f43');
       spawnFirework(cx, cy);
-      for (var b = 0; b < 3; b++) dropPickup(cx, cy, true);
+      for (var b = 0; b < 3; b++) dropPickup(cx, cy);
       state.score += 50;
       state.flash = Math.max(state.flash, 0.22);
       state.slowTimer = SLOW_DURATION;
       state.shake = Math.max(state.shake, 0.6);
     } else if (en.kind === 'elite') {
+      boom(0.3, 0.1, 1100);
       spawnParticles(cx, cy, '#ff9f43');
+      dropPickup(cx, cy);
       dropPickup(cx, cy);
       state.score += 5;
       state.shake = Math.max(state.shake, 0.2);
     } else {
+      boom(0.18, 0.11, 900);
       var color = en.kind === 'rusher' || en.kind === 'splitter' ? '#ff8a3d' : '#ffd166';
       spawnParticles(cx, cy, color);
       state.score += 1;
       state.shake = Math.max(state.shake, 0.1);
+      dropPickup(cx, cy, 0.12);
     }
 
     // 分裂机死亡后裂成两个小怪
@@ -480,12 +583,14 @@
       state.shield -= 1;
       state.invuln = 0.4;
       state.shake = 0.16;
+      blip(900, 520, 0.12, 'triangle', 0.06);
       return;
     }
 
     state.lives = L.applyDamage(state.lives);
     state.invuln = INVULN_TIME;
     state.shake = 0.24;
+    blip(320, 90, 0.3, 'sawtooth', 0.1);
     updateLives();
     if (state.lives <= 0) gameOver();
   }
@@ -497,6 +602,7 @@
     state.enemyBullets.length = 0;
     state.flash = 0.28;
     state.shake = 0.5;
+    boom(0.55, 0.14, 1700);
 
     state.slowTimer = SLOW_DURATION;
     createExplosion(W / 2, H * 0.62);
@@ -538,6 +644,7 @@
 
   function gameOver() {
     state.mode = 'over';
+    blip(420, 70, 0.8, 'square', 0.09);
     state.flash = 0;
     state.timeScale = 1;
     state.slowTimer = 0;
@@ -566,6 +673,7 @@
       vx: 0,
       vy: -620
     });
+    blip(940, 640, 0.045, 'square', 0.032);
   }
 
   /** 瞄准单发 */
@@ -765,6 +873,7 @@
     var dt = realDt * state.timeScale;
 
     state.elapsed += dt;
+    if (state.hint > 0) state.hint = Math.max(0, state.hint - realDt);
     if (state.invuln > 0) state.invuln = Math.max(0, state.invuln - dt);
     if (state.rapid > 0) state.rapid = Math.max(0, state.rapid - dt);
 
@@ -892,6 +1001,8 @@
           state.bullets.splice(k2, 1);
           en.hp -= 1;
           en.hitFlash = 0.08;
+          spawnSparks(en.x + en.w / 2, en.y + en.h / 2, '#ffe9a8');
+          blip(1500, 1150, 0.03, 'triangle', 0.05);
 
           if (en.hp <= 0) {
             killEnemy(en);
@@ -932,6 +1043,7 @@
       if (L.rectsIntersect(playerBox, pk)) {
         applyPickup(pk.type);
         spawnParticles(pk.x + 7, pk.y + 7, PICKUP_COLORS[pk.type]);
+        blip(660, 990, 0.1, 'sine', 0.055);
         state.pickups.splice(q, 1);
       }
     }
@@ -1312,10 +1424,19 @@
       drawEnemy(state.enemies[i]);
     }
 
-    ctx.fillStyle = '#ff9f43';
     for (i = 0; i < state.enemyBullets.length; i++) {
       var eb = state.enemyBullets[i];
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+      ctx.fillRect(eb.x - 1, eb.y - 1, eb.w + 2, eb.h + 2);
+      ctx.fillStyle = '#ffa94d';
       ctx.fillRect(eb.x, eb.y, eb.w, eb.h);
+      ctx.fillStyle = '#fff1c9';
+      ctx.fillRect(
+        eb.x + eb.w * 0.25,
+        eb.y + eb.h * 0.15,
+        Math.max(1, eb.w * 0.5),
+        Math.max(1, eb.h * 0.4)
+      );
     }
 
     ctx.font = 'bold 9px ui-monospace, monospace';
@@ -1389,6 +1510,30 @@
       ctx.fillStyle = 'rgba(255, 255, 255, ' + ((state.flash / 0.28) * 0.4) + ')';
       ctx.fillRect(0, 0, W, H);
     }
+
+    if (state.hint > 0 && state.mode === 'playing' && !state.paused) {
+      var hintAlpha = Math.min(1, state.hint / 0.6);
+      ctx.globalAlpha = hintAlpha;
+      ctx.fillStyle = '#cfe3ff';
+      ctx.font = '13px ui-monospace, monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('按住拖动 · 子弹自动发射', W / 2, H - 150);
+      ctx.globalAlpha = 1;
+    }
+
+    if (state.paused) {
+      ctx.fillStyle = 'rgba(5, 7, 13, 0.72)';
+      ctx.fillRect(0, 0, W, H);
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#cfe3ff';
+      ctx.font = 'bold 20px ui-monospace, monospace';
+      ctx.fillText('已暂停', W / 2, H / 2 - 12);
+      ctx.fillStyle = '#8ba3c7';
+      ctx.font = '12px ui-monospace, monospace';
+      ctx.fillText('按住屏幕继续', W / 2, H / 2 + 18);
+    }
   }
 
   var lastTs = 0;
@@ -1398,13 +1543,20 @@
     var realDt = Math.min(0.05, (ts - lastTs) / 1000);
     lastTs = ts;
 
-    update(realDt);
+    if (!state.paused) update(realDt);
     draw();
     requestAnimationFrame(frame);
   }
 
   fitCanvas();
   window.addEventListener('resize', fitCanvas);
+
+  // 切到后台自动暂停，回来时停在原处等玩家继续
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden && state.mode === 'playing') {
+      state.paused = true;
+    }
+  });
   reset();
   requestAnimationFrame(frame);
 })();
